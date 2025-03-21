@@ -1,4 +1,4 @@
-# MIR100_WebApp
+# MIR100_WebApp <<Dự án này chỉ chạy được trên Ubuntu>>
 - Cần cài đặt: ROS1 (NOETIC hoặc MELODIC), cài đặt package MIR100 từ https://github.com/DFKI-NI/mir_robot, cài đặt Python 3.8.11 và các thư viện về Dash Plotly
   + Cách cài package MIR100: làm theo các bước sau:
         # create a catkin workspace
