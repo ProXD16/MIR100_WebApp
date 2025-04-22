@@ -7,6 +7,14 @@ import numpy as np
 from make_marker_with_json.process_with_json import *
 from make_marker_with_json.generate_image_from_json import *
 from components import button_default_manual_style, button_active_manual_style
+from geometry_msgs.msg import Twist
+
+try:
+    rospy.init_node('mir_joystick_interface', anonymous=True)
+    pub = rospy.Publisher('/cmd_vel', Twist, queue_size=10)
+except Exception as e:
+    print(f"ROS initialization failed: {e}")
+    pub = None
 
 @callback(
     [Output("pause-button", "children", allow_duplicate=True),  
@@ -135,26 +143,104 @@ def teleop_control(f, b, l, r, fl, fr, bl, br, s):
         return "No movement"
     
 @callback(
-    Output("joystick-container", "style"),
-    Output("manual-control", "style"),
+    [Output("joystick-container", "style"),
+     Output("manual-control", "style"),
+     Output("interval-joystick", "disabled")],
     Input("manual-control", "n_clicks"),
     State("joystick-container", "style"),
-    prevent_initial_call=True,
+    prevent_initial_call=True
 )
 def toggle_joystick(n_clicks, current_style):
     """
-    Callback to show/hide the joystick container when the MANUAL CONTROL button is clicked.
+    Callback to show/hide the joystick container and enable/disable the joystick interval
+    when the MANUAL CONTROL button is clicked.
 
     Args:
         n_clicks: Number of times the button has been clicked.
         current_style: The current style of the joystick container.
 
     Returns:
-        A dictionary containing the style for the joystick container.
+        Tuple of joystick container style, manual control button style, and interval disabled state.
     """
     if n_clicks and current_style:
-        if current_style["display"] == "none":
-            return {"display": "block"}, button_active_manual_style
+        if current_style.get("display") == "none":
+            return {"display": "block"}, button_active_manual_style, False
         else:
-            return {"display": "none"}, button_default_manual_style
-    return {"display": "none"}, button_default_manual_style
+            # When hiding joystick, stop robot
+            if pub is not None:
+                twist = Twist()
+                pub.publish(twist)
+            return {"display": "none"}, button_default_manual_style, True
+    return {"display": "none"}, button_default_manual_style, True
+
+@callback(
+    Output("joystick-data", "data"),
+    Input("joystick", "angle"),
+    Input("joystick", "force"),
+    prevent_initial_call=True
+)
+def update_joystick_data(angle, force):
+    """
+    Callback to store joystick angle and force data.
+
+    Args:
+        angle: Joystick angle in degrees.
+        force: Joystick force (0 to 1).
+
+    Returns:
+        Dictionary with angle and force.
+    """
+    return {"angle": angle or 0, "force": force or 0}
+
+@callback(
+    Output("joystick-output", "children", allow_duplicate=True),
+    Input("interval-joystick", "n_intervals"),
+    State("joystick-data", "data"),
+    State("speed-scale", "value"),
+    State("emergency-stop", "on"),
+    prevent_initial_call=True
+)
+def send_twist(n, data, speed_scale, emergency_stop):
+    """
+    Callback to publish ROS Twist messages based on joystick input and update display.
+
+    Args:
+        n: Interval trigger count.
+        data: Stored joystick data (angle, force).
+        speed_scale: Speed scale from slider (0.1 to 1.0).
+        emergency_stop: Boolean switch state.
+
+    Returns:
+        String for joystick-output display.
+    """
+    if pub is None:
+        return "⚠️ ROS not initialized!"
+
+    if emergency_stop:
+        twist = Twist()
+        pub.publish(twist)
+        return "🛑 Emergency Stop Activated!"
+
+    angle = data["angle"]
+    force = data["force"]
+
+    if force == 0:
+        twist = Twist()
+        pub.publish(twist)
+        return "⏹ Robot Stopped"
+
+    angle = angle % 360
+    linear, angular = 0.0, 0.0
+
+    linear = math.sin(math.radians(angle)) * force * speed_scale
+    angular = math.cos(math.radians(angle)) * force * speed_scale * 2.0
+
+    linear = max(min(linear, 1.0), -1.0)
+    angular = max(min(angular, 2.0), -2.0)
+
+    twist = Twist()
+    twist.linear.x = linear
+    twist.angular.z = angular
+    pub.publish(twist)
+
+    return f"🚀 Moving: Linear = {linear:.2f} m/s, Angular = {angular:.2f} rad/s"

@@ -1,126 +1,137 @@
-import dash
-from dash import dcc, html
+import rospy
+from geometry_msgs.msg import Twist
+from dash import Dash, html, dcc
 from dash.dependencies import Input, Output, State
-import plotly.express as px
-import pandas as pd
-import numpy as np
+import dash_daq as daq
+import math
 
-# Dữ liệu mẫu ban đầu
-df = pd.DataFrame({
-    "x": [1, 2, 3, 4, 5],
-    "y": [10, 15, 13, 17, 20],
-    "label": ["A", "B", "C", "D", "E"]
+# ROS node initialization
+rospy.init_node('mir_joystick_interface', anonymous=True)
+pub = rospy.Publisher('/cmd_vel', Twist, queue_size=10)
+
+# Dash app setup
+app = Dash(__name__, suppress_callback_exceptions=True)
+app.title = "MiR Joystick Controller"
+
+# Layout with enhanced styling and additional controls
+app.layout = html.Div([
+    html.H2("🚀 MiR Robot Joystick Control", style={
+        'textAlign': 'center',
+        'color': '#2c3e50',
+        'marginBottom': '30px'
+    }),
+
+    html.Div([
+        daq.Joystick(
+            id='joystick',
+            label="Control Joystick",
+            size=200,
+            style={'margin': 'auto'}
+        ),
+        
+        # Speed scale slider wrapped in a Div for styling
+        html.Label("Speed Scale:", style={'marginTop': '20px'}),
+        html.Div([
+            dcc.Slider(
+                id='speed-scale',
+                min=0.1,
+                max=1.0,
+                step=0.1,
+                value=0.5,
+                marks={i/10: str(i/10) for i in range(1, 11)},
+                updatemode='drag'
+            )
+        ], style={'width': '300px', 'margin': '20px auto'}),
+
+        # Emergency stop button
+        daq.BooleanSwitch(
+            id='emergency-stop',
+            on=False,
+            label="Emergency Stop",
+            labelPosition="top",
+            color="#ff0000",
+            style={'margin': '20px auto'}
+        ),
+    ], style={'textAlign': 'center'}),
+
+    dcc.Interval(id='interval-pub', interval=50, n_intervals=0),  # 50ms for smoother control
+
+    html.Div(id='joystick-output', style={
+        'marginTop': '30px',
+        'fontSize': '20px',
+        'color': '#34495e',
+        'textAlign': 'center'
+    }),
+
+    dcc.Store(id='joystick-data', data={'angle': 0, 'force': 0})
+], style={
+    'maxWidth': '600px',
+    'margin': 'auto',
+    'padding': '20px',
+    'backgroundColor': '#f9f9f9',
+    'borderRadius': '10px',
+    'boxShadow': '0 4px 8px rgba(0,0,0,0.1)'
 })
 
-# Tạo lưới vô hình để bắt click bất kỳ
-x_range = np.linspace(0, 6, 50)  # Phủ toàn bộ trục x
-y_range = np.linspace(9, 21, 50)  # Phủ toàn bộ trục y
-invisible_df = pd.DataFrame([(x, y) for x in x_range for y in y_range], columns=["x", "y"])
-
-# Tạo figure ban đầu
-fig = px.scatter(df, x="x", y="y", text="label", title="Biểu đồ tương tác - Chấm điểm bất kỳ")
-fig.update_traces(textposition="top center")
-# Thêm lớp scatter vô hình
-fig.add_scatter(
-    x=invisible_df["x"],
-    y=invisible_df["y"],
-    mode="markers",
-    marker=dict(size=1, opacity=0),  # Vô hình
-    showlegend=False,
-    hoverinfo="none"
-)
-fig.update_layout(
-    clickmode="event",
-    xaxis=dict(range=[0, 6]),
-    yaxis=dict(range=[9, 21])
-)
-
-# Khởi tạo ứng dụng Dash
-app = dash.Dash(__name__)
-
-# Layout của ứng dụng
-app.layout = html.Div([
-    dcc.Graph(id="graph", figure=fig, style={"height": "600px"}),
-    html.Div(id="output", children="Click trên biểu đồ để chấm điểm!"),
-    html.Button("Xóa tất cả điểm", id="reset-button", n_clicks=0),
-    dcc.Store(id="marked-points", data=[]),  # Lưu danh sách điểm được chấm
-])
-
-# Callback để cập nhật biểu đồ và thông tin
+# Callback to store joystick data
 @app.callback(
-    Output("graph", "figure"),
-    Output("output", "children"),
-    Output("marked-points", "data"),
-    Input("graph", "clickData"),
-    Input("reset-button", "n_clicks"),
-    State("marked-points", "data"),
-    prevent_initial_call=True
+    Output('joystick-data', 'data'),
+    Input('joystick', 'angle'),
+    Input('joystick', 'force')
 )
-def update_figure(clickData, n_clicks, marked_points):
-    # Khởi tạo figure từ dữ liệu gốc
-    updated_fig = px.scatter(df, x="x", y="y", text="label", title="Biểu đồ tương tác - Chấm điểm bất kỳ")
-    updated_fig.update_traces(textposition="top center")
-    # Thêm lớp scatter vô hình
-    updated_fig.add_scatter(
-        x=invisible_df["x"],
-        y=invisible_df["y"],
-        mode="markers",
-        marker=dict(size=1, opacity=0),
-        showlegend=False,
-        hoverinfo="none"
-    )
-    updated_fig.update_layout(
-        clickmode="event",
-        xaxis=dict(range=[0, 6]),
-        yaxis=dict(range=[9, 21])
-    )
+def update_joystick_data(angle, force):
+    return {'angle': angle or 0, 'force': force or 0}
 
-    # Xử lý sự kiện
-    ctx = dash.callback_context
-    if ctx.triggered_id == "reset-button":
-        # Xóa tất cả điểm
-        marked_points = []
-        output_text = "Đã xóa tất cả điểm! Click để chấm lại."
-    elif ctx.triggered_id == "graph" and clickData:
-        # Lấy tọa độ từ clickData
-        point = clickData["points"][0]
-        x = point["x"]
-        y = point["y"]
+# Callback to send Twist commands and update display
+@app.callback(
+    Output('joystick-output', 'children'),
+    Input('interval-pub', 'n_intervals'),
+    State('joystick-data', 'data'),
+    State('speed-scale', 'value'),
+    State('emergency-stop', 'on')
+)
+def send_twist(n, data, speed_scale, emergency_stop):
+    if emergency_stop:
+        twist = Twist()  # Send stop command
+        pub.publish(twist)
+        return "🛑 Emergency Stop Activated!"
 
-        # Thêm điểm vào danh sách
-        marked_points.append({"x": x, "y": y})
+    angle = data['angle']
+    force = data['force']
 
-        # Hiển thị tất cả điểm đã chấm
-        if marked_points:
-            marked_df = pd.DataFrame(marked_points)
-            # Thêm marker đỏ
-            updated_fig.add_scatter(
-                x=marked_df["x"],
-                y=marked_df["y"],
-                mode="markers",
-                marker=dict(size=10, color="red"),
-                name="Điểm chấm",
-                showlegend=True
-            )
-            # Thêm annotation cho mỗi điểm với tọa độ
-            for i, row in marked_df.iterrows():
-                updated_fig.add_annotation(
-                    x=row["x"],
-                    y=row["y"],
-                    text=f"({row['x']:.2f}, {row['y']:.2f})",
-                    showarrow=False,
-                    font=dict(size=10, color="black"),
-                    xanchor="center",
-                    yanchor="bottom",
-                    yshift=5
-                )
-        # Cập nhật thông tin output
-        output_text = f"Đã chấm điểm tại: ({x:.2f}, {y:.2f}) | Tổng điểm: {len(marked_points)}"
-    else: 
-        output_text = "Click trên biểu đồ để chấm điểm!"
+    if force == 0:
+        twist = Twist()  # Send stop command
+        pub.publish(twist)
+        return "⏹ Robot Stopped"
 
-    return updated_fig, output_text, marked_points
+    # Normalize angle to [0, 360) degrees
+    angle = angle % 360
 
-# Chạy ứng dụng
-if __name__ == "__main__":
-    app.run_server(debug=True)
+    # Calculate linear and angular velocities based on joystick direction
+    linear = 0.0
+    angular = 0.0
+
+    # Linear velocity (up/down): map vertical component
+    # Up (angle ~0°) = forward, Down (angle ~180°) = backward
+    linear = math.sin(math.radians(angle)) * force * speed_scale
+    # Scale linear velocity to max 1.0 m/s
+    linear = max(min(linear, 1.0), -1.0)
+
+    # Angular velocity (left/right): map horizontal component
+    # Left (angle ~90°) = counter-clockwise, Right (angle ~270°) = clockwise
+    angular = math.cos(math.radians(angle)) * force * speed_scale * 2.0
+    # Scale angular velocity to max 2.0 rad/s
+    angular = max(min(angular, 2.0), -2.0)
+    
+
+    # Publish Twist message
+    twist = Twist()
+    twist.linear.x = linear
+    twist.angular.z = angular
+    pub.publish(twist)
+
+    return f"🚀 Moving: Linear = {linear:.2f} m/s, Angular = {angular:.2f} rad/s"
+
+# Run Dash app
+if __name__ == '__main__':
+    app.run_server(debug=True, host='0.0.0.0', port=8050)

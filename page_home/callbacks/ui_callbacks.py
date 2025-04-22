@@ -9,6 +9,7 @@ from components.rviz_section import create_rviz_section
 from make_marker_with_json import *
 from page_map.map_api import MapAPI
 from page_mission.missions.layout import mission_queue_layout
+from std_msgs.msg import String
 
 login_page = LoginPage()
 change_password_page = ChangePasswordPage()
@@ -363,3 +364,48 @@ def update_battery_status(n):
     except Exception as e:
         print(f"⚠️ Lỗi khi gọi API: {e}")  # Log lỗi
         return "--%"
+    
+@callback(
+    [Output('status-text', 'children'),
+     Output('status-icon', 'className'),
+     Output('status-badge', 'children'),
+     Output('status-badge', 'color')],
+    [Input('interval-component', 'n_intervals')]
+)
+def update_charging_status(n):
+    json_path = os.path.join("database_json", "mir_status.json")
+    
+    try:
+        with open(json_path, "r") as f:
+            content = json.load(f)
+            latest_status = content.get("data", {})
+    except Exception as e:
+        # print(f"⚠️ Lỗi đọc file JSON: {e}")
+        latest_status = {"message": "Không thể đọc trạng thái", "args": {}}
+    message_template = latest_status.get("message", "No status available")
+    args = latest_status.get("args", {})
+    try:
+        message = message_template % args
+    except Exception as e:
+        # print(f"⚠️ Lỗi khi format message: {e}")
+        message = message_template
+    icon_class = "fas fa-spinner fa-spin me-2"
+    badge_text = "EXECUTING"
+    badge_color = "success"
+    if "error" in message.lower():
+        icon_class = "fas fa-exclamation-triangle me-2"
+        badge_color = "danger"
+        badge_text = "ERROR"
+    elif "complete" in message.lower():
+        icon_class = "fas fa-check-circle me-2"
+        badge_text = "COMPLETED"
+    elif "waiting" in message.lower():
+        icon_class = "fas fa-clock me-2"
+        badge_text = "WAITING"
+
+    return (
+        message,
+        icon_class,
+        badge_text,
+        badge_color
+    )

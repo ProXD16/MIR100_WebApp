@@ -1,5 +1,10 @@
-from dash import Dash, dcc, html
+import rospy
+from geometry_msgs.msg import Twist
+from dash import Dash, dcc, html, Output, Input, State
+from dash.dependencies import ClientsideFunction
 import dash_bootstrap_components as dbc
+import dash_daq as daq
+import math
 
 app = Dash(__name__, external_stylesheets=[dbc.themes.BOOTSTRAP])
 
@@ -7,33 +12,33 @@ button_style = {
     "padding": "10px 20px",
     "border": "none",
     "color": "#FFFFFF",
-    "backgroundColor": "#5DADE2",  # Softer blue
+    "backgroundColor": "#5DADE2",
     "border-radius": "8px",
     "transition": "background-color 0.3s ease",
     "cursor": "pointer",
-    "box-shadow": "0 2px 5px rgba(0, 0, 0, 0.2)",  # Subtle shadow
+    "box-shadow": "0 2px 5px rgba(0, 0, 0, 0.2)",
 }
 button_primary_style = {
     "width": "20%",
     "padding": "10px 20px",
     "border": "none",
     "color": "#FFFFFF",
-    "backgroundColor": "#5DADE2",  # Softer blue
+    "backgroundColor": "#5DADE2",
     "border-radius": "8px",
     "transition": "background-color 0.3s ease",
     "cursor": "pointer",
-    "box-shadow": "0 2px 5px rgba(0, 0, 0, 0.2)",  # Subtle shadow
+    "box-shadow": "0 2px 5px rgba(0, 0, 0, 0.2)",
 }
 button_secondary_style = {
     "width": "100%",
     "padding": "10px 20px",
     "border": "none",
     "color": "#FFFFFF",
-    "backgroundColor": "#5DADE2",  # Softer blue
+    "backgroundColor": "#5DADE2",
     "border-radius": "8px",
     "transition": "background-color 0.3s ease",
     "cursor": "pointer",
-    "box-shadow": "0 2px 5px rgba(0, 0, 0, 0.2)",  # Subtle shadow
+    "box-shadow": "0 2px 5px rgba(0, 0, 0, 0.2)",
 }
 button_hover_style = {
     "border-radius": "8px",
@@ -116,7 +121,6 @@ def create_charging_status_component():
         ]
     )
 
-
 def create_plc_info_component():
     return html.Div(
         style={
@@ -135,7 +139,6 @@ def create_plc_info_component():
         ],
     )
 
-
 def create_manual_control_component():
     return html.Div(
         style={
@@ -146,57 +149,60 @@ def create_manual_control_component():
             "borderRadius": "5px",
             "textAlign": "center",
             "width": "100%",
-            "height": "300px",
+            "height": "437px",
         },
         children=[
-            html.Div("Select Manual control to control the robot manually."),
-            html.Button("MANUAL CONTROL", id="manual-control", className="btn btn-secondary", style=button_default_manual_style),
+            html.Button(
+                "MANUAL CONTROL",
+                id="manual-control",
+                className="btn btn-secondary",
+                style=button_default_manual_style
+            ),
             html.Div(
-                id="joystick-container", 
-                style={"display": "none"}, 
+                id="joystick-container",
+                style={"display": "none"},
                 children=[
-                    generate_joystick(),
-                    html.Div(
-                        "Tốc độ hiện tại:",
-                        style={"marginTop": "10px"}
+                    daq.Joystick(
+                        id='joystick',
+                        label="Control Joystick",
+                        size=150,
+                        style={'margin': 'auto'}
                     ),
-                    html.Div(id="current-speed-display"),
-                    html.Div(id="dummy-output", style={"display": "none"})
+                    html.Label("Speed Scale:", style={'marginTop': '10px'}),
+                    html.Div([
+                        dcc.Slider(
+                            id='speed-scale',
+                            min=0.1,
+                            max=1.0,
+                            step=0.1,
+                            value=0.5,
+                            marks={i/10: str(i/10) for i in range(1, 11)},
+                            updatemode='drag'
+                        )
+                    ], style={'width': '80%', 'margin': '10px auto'}),
+                    daq.BooleanSwitch(
+                        id='emergency-stop',
+                        on=False,
+                        label="Emergency Stop",
+                        labelPosition="top",
+                        color="#ff0000",
+                        style={'margin': '10px auto'}
+                    ),
+                    html.Div(
+                        id='joystick-output',
+                        style={
+                            'marginTop': '10px',
+                            'fontSize': '14px',
+                            'color': '#34495e',
+                            'textAlign': 'center'
+                        }
+                    ),
+                    dcc.Store(id='joystick-data', data={'angle': 0, 'force': 0}),
+                    dcc.Interval(id='interval-joystick', interval=50, n_intervals=0, disabled=True),
                 ]
             ),
         ],
     )
-
-def generate_joystick():
-    return html.Div(
-        style={
-            'width': '200px',
-            'height': '200px',
-            'borderRadius': '50%',
-            'backgroundColor': '#ddd',
-            'position': 'relative',
-            'margin': '20px auto',
-        },
-        children=[
-            html.Div(
-                id='joystick-handle',
-                style={
-                    'width': '80px',
-                    'height': '80px',
-                    'borderRadius': '50%',
-                    'backgroundColor': '#3498db',
-                    'position': 'absolute',
-                    'top': '50%',
-                    'left': '50%',
-                    'transform': 'translate(-50%, -50%)',
-                    'cursor': 'grab',
-                },
-                draggable='true',
-            ),
-            dcc.Store(id='joystick-position', data={'x': 0, 'y': 0}),
-        ],
-    )
-
 
 class MapSection:
     def create_map_section(self):
@@ -210,7 +216,6 @@ class MapSection:
                             [
                                 dbc.Col(
                                     [
-                                        # Nút điều khiển (Add Markers, ...)
                                         html.Div(
                                             [
                                                 html.Button("Add Markers", id="add-markers-btn",
@@ -435,7 +440,6 @@ class MapSection:
                                             is_open=False,
                                         ),
 
-                                        # Bản đồ
                                         html.Div(
                                             [
                                                 html.Img(
@@ -447,7 +451,7 @@ class MapSection:
                                                         "border": "5px solid #34495E",
                                                         "borderRadius": "10px",
                                                         "object-fit": "contain",
-                                                        "position": "relative",  # Loại bỏ absolute
+                                                        "position": "relative",
                                                         "z-index": "1",
                                                     },
                                                 ),
@@ -570,7 +574,7 @@ class MapSection:
                                                         "left": "0",
                                                         "z-index": "6",
                                                     },
-                                                ), 
+                                                ),
                                                 html.Img(
                                                     id="global-costmap-image",
                                                     src="/static/global_costmap_image.png",
@@ -585,16 +589,15 @@ class MapSection:
                                                         "left": "0",
                                                         "z-index": "6",
                                                     },
-                                                ),                                             
+                                                ),
                                             ],
-                                            style={"position": "relative"}  # Container cho hình ảnh
+                                            style={"position": "relative"}
                                         ),
                                         create_charging_status_component(),
                                     ],
                                     width=8,
                                 ),
 
-                                # Cột phải (PLC Info và Manual Control)
                                 dbc.Col(
                                     [
                                         html.Div(
@@ -608,7 +611,7 @@ class MapSection:
                                                 "lineHeight": "100px",
                                                 "fontSize": "4em",
                                                 "borderRadius": "10px",
-                                                "marginBottom": "10px",  # Thêm margin dưới nút
+                                                "marginBottom": "10px",
                                                 "marginTop": "10px"
                                             },
                                             children=["||"],
@@ -637,3 +640,4 @@ class MapSection:
                 )
             ]
         )
+    
