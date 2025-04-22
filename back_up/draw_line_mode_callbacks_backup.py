@@ -1,16 +1,11 @@
-# draw_line_mode_callbacks.py
 from dash import Input, Output, State, callback, callback_context, no_update
 import plotly.graph_objects as go
-import json
-from function_draw_mode.save_lines import save_lines_to_json
-from page_home.shared_data import all_lines, all_arcs
+from page_home.shared_data import all_lines
 import time
 
 DEBOUNCE_TIMEOUT = 0.1
 last_relayout_time = 0
 
-
-# Callback to open the draw method modal
 @callback(
     Output("draw-method-modal", "is_open"),
     Input("draw-line-button", "n_clicks"),
@@ -28,8 +23,6 @@ def open_draw_method_modal(n_clicks, draw_line_mode, is_open):
         return False
     return not is_open
 
-
-# Callback to set the draw method (manual or coordinate) and close the modal
 @callback(
     Output("draw-method", "data"),
     Output("draw-method-modal", "is_open", allow_duplicate=True),
@@ -46,11 +39,9 @@ def set_draw_method(manual_clicks, coordinate_clicks, is_open):
     if button_id == "manual-draw-button":
         return "manual", False
     elif button_id == "coordinate-draw-button":
-        return "coordinate",
+        return "coordinate", False
     return "", is_open
 
-
-# Callback to open coordinate modal when "coordinate" draw method is selected
 @callback(
     Output("coordinate-modal", "is_open"),
     Input("draw-method", "data"),
@@ -62,10 +53,8 @@ def open_coordinate_modal(draw_method, is_open):
         return True
     return False
 
-
-# Callback to draw line based on coordinates entered in the modal
 @callback(
-    Output("map-image-draw-mode", "figure"),
+    Output("map-image-draw-mode", "figure", allow_duplicate=True),
     Output("coordinate-modal", "is_open", allow_duplicate=True),
     Input("draw-button", "n_clicks"),
     State("start-x", "value"),
@@ -88,8 +77,6 @@ def draw_line_coordinate(n_clicks, start_x, start_y, end_x, end_y, figure):
     except (ValueError, TypeError):
         print("Invalid coordinates entered.")
         return figure, no_update
-
-    # Add line to the figure
     line_data = go.Scatter(
         x=[start_x, end_x],
         y=[start_y, end_y],
@@ -101,8 +88,6 @@ def draw_line_coordinate(n_clicks, start_x, start_y, end_x, end_y, figure):
     all_lines.append({"type": "line", "x": [start_x, end_x], "y": [start_y, end_y]})
     return figure, False
 
-
-# Callback to store the start point when the user clicks on the graph
 @callback(
     Output("line-coordinates", "data"),
     Input("map-image-draw-mode", "clickData"),
@@ -122,7 +107,6 @@ def store_start_point(clickData, draw_method, draw_line_mode):
         return {"start_x": x, "start_y": y}
     return {}
 
-
 @callback(
     Output("map-image-draw-mode", "figure", allow_duplicate=True),
     Input("map-image-draw-mode", "relayoutData"),
@@ -134,13 +118,11 @@ def store_start_point(clickData, draw_method, draw_line_mode):
 )
 def draw_line_on_release(relayoutData, draw_method, line_coordinates, figure, draw_line_mode):
     global last_relayout_time
-
     current_time = time.time()
     if current_time - last_relayout_time < DEBOUNCE_TIMEOUT:
         print("Debounced relayout event.")
         return no_update
     last_relayout_time = current_time
-
     if relayoutData:
         if 'shapes' in relayoutData:
             all_lines.clear()
@@ -159,7 +141,6 @@ def draw_line_on_release(relayoutData, draw_method, line_coordinates, figure, dr
             return figure
         if draw_method == "manual" and draw_line_mode:
             x_start, y_start, x_end, y_end = None, None, None, None
-
             if "shapes" in relayoutData and len(relayoutData["shapes"]) > 0:
                 shape = relayoutData["shapes"][-1]
                 x_start = shape["x0"]
@@ -203,8 +184,6 @@ def draw_line_on_release(relayoutData, draw_method, line_coordinates, figure, dr
     else:
         return no_update
 
-
-# Callback to clear the stored start point after drawing
 @callback(
     Output("line-coordinates", "data", allow_duplicate=True),
     Input("map-image-draw-mode", "figure"),
@@ -212,7 +191,6 @@ def draw_line_on_release(relayoutData, draw_method, line_coordinates, figure, dr
 )
 def clear_start_point(figure):
     return {}
-
 
 @callback(
     Output("draw-line-mode", "data"),
@@ -222,7 +200,6 @@ def clear_start_point(figure):
 )
 def toggle_draw_line_mode(n_clicks, current_state):
     return not current_state
-
 
 @callback(
     Output("map-image-draw-mode", "dragmode"),
@@ -234,7 +211,6 @@ def update_drag_mode(draw_line_mode):
         return "drawline"
     else:
         return "pan"
-
 
 @callback(
     Output("draw-line-button", "style"),
@@ -257,3 +233,18 @@ def update_button_style(is_active, button_style_store):
     else:
         return default_style
     
+@callback(
+    Output("map-image-draw-mode", "figure", allow_duplicate=True),
+    Input("clear-lines-button", "n_clicks"),
+    State("map-image-draw-mode", "figure"),
+    prevent_initial_call=True,
+)
+def clear_lines(n_clicks, figure):
+    all_lines.clear()
+    figure["data"] = [
+        trace for trace in figure["data"]
+        if "line" in trace and trace["line"]["color"] in ["#CCCCCC", "#000000"] 
+    ]
+    figure["layout"]["shapes"] = []
+    return figure
+

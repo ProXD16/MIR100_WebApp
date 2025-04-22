@@ -65,7 +65,7 @@ class StatusBar:
                 )
             ],
             style={
-                "background": "#34495E",
+                "background": "#77B5FE",
                 "color": "white",
                 "padding": "10px",
                 "position": "fixed",

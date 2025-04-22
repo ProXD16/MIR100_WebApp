@@ -88,4 +88,11 @@ def update_robot_image(n):
         return [f"/static/robot_image.png?time={modified_time}"]
     else:
         raise PreventUpdate
-    
+
+@callback(
+    Output("costmap-image", "src"),
+    Input("interval-component", "n_intervals")
+)
+def update_costmap_image(n):
+    timestamp = int(time.time())
+    return f"/static/cost_map_image.png?{timestamp}"

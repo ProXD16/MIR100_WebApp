@@ -6,6 +6,7 @@ from dash import callback_context
 import numpy as np
 from make_marker_with_json.process_with_json import *
 from make_marker_with_json.generate_image_from_json import *
+from components import button_default_manual_style, button_active_manual_style
 
 @callback(
     [Output("pause-button", "children", allow_duplicate=True),  
@@ -132,3 +133,28 @@ def teleop_control(f, b, l, r, fl, fr, bl, br, s):
         return "Stop"
     else:
         return "No movement"
+    
+@callback(
+    Output("joystick-container", "style"),
+    Output("manual-control", "style"),
+    Input("manual-control", "n_clicks"),
+    State("joystick-container", "style"),
+    prevent_initial_call=True,
+)
+def toggle_joystick(n_clicks, current_style):
+    """
+    Callback to show/hide the joystick container when the MANUAL CONTROL button is clicked.
+
+    Args:
+        n_clicks: Number of times the button has been clicked.
+        current_style: The current style of the joystick container.
+
+    Returns:
+        A dictionary containing the style for the joystick container.
+    """
+    if n_clicks and current_style:
+        if current_style["display"] == "none":
+            return {"display": "block"}, button_active_manual_style
+        else:
+            return {"display": "none"}, button_default_manual_style
+    return {"display": "none"}, button_default_manual_style

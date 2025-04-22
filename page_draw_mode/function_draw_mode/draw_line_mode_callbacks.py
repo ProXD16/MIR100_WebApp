@@ -26,21 +26,25 @@ def open_draw_method_modal(n_clicks, draw_line_mode, is_open):
 @callback(
     Output("draw-method", "data"),
     Output("draw-method-modal", "is_open", allow_duplicate=True),
+    Output("map-image-draw-mode", "figure", allow_duplicate=True),
     Input("manual-draw-button", "n_clicks"),
     Input("coordinate-draw-button", "n_clicks"),
     State("draw-method-modal", "is_open"),
+    State("map-image-draw-mode", "figure"),
     prevent_initial_call=True,
 )
-def set_draw_method(manual_clicks, coordinate_clicks, is_open):
+def set_draw_method(manual_clicks, coordinate_clicks, is_open, figure):
     ctx = callback_context
     if not ctx.triggered:
-        return no_update, no_update
+        return no_update, no_update, no_update
     button_id = ctx.triggered[0]['prop_id'].split('.')[0]
     if button_id == "manual-draw-button":
-        return "manual", False
+        figure["layout"]["dragmode"] = "drawline"
+        return "manual", False, figure
     elif button_id == "coordinate-draw-button":
-        return "coordinate", False
-    return "", is_open
+        figure["layout"]["dragmode"] = False
+        return "coordinate", False, figure
+    return no_update, is_open, figure
 
 @callback(
     Output("coordinate-modal", "is_open"),
@@ -81,7 +85,7 @@ def draw_line_coordinate(n_clicks, start_x, start_y, end_x, end_y, figure):
         x=[start_x, end_x],
         y=[start_y, end_y],
         mode="lines",
-        line=dict(color="blue", width=2),
+        line=dict(color="black", width=4),
         showlegend=False,
     )
     figure["data"].append(line_data)
@@ -194,12 +198,15 @@ def clear_start_point(figure):
 
 @callback(
     Output("draw-line-mode", "data"),
+    Output("map-image-draw-mode", "figure", allow_duplicate=True),
     Input("draw-line-button", "n_clicks"),
     State("draw-line-mode", "data"),
+    State("map-image-draw-mode", "figure"),
     prevent_initial_call=True,
 )
-def toggle_draw_line_mode(n_clicks, current_state):
-    return not current_state
+def toggle_draw_line_mode(n_clicks, current_state, figure):
+    figure["layout"]["dragmode"] = False
+    return not current_state, figure
 
 @callback(
     Output("map-image-draw-mode", "dragmode"),

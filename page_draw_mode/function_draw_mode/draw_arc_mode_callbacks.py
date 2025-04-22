@@ -2,7 +2,7 @@ from dash import Input, Output, State, callback, callback_context, no_update
 import plotly.graph_objects as go
 import numpy as np
 import math
-from page_draw_mode.function_draw_mode.save_lines import save_lines_to_json
+from page_draw_mode.function_draw_mode.save_lines import save_lines_to_json, load_lines_from_json
 from page_home.shared_data import all_arcs
 
 def circle_from_3_points(P1, P2, P3):
@@ -53,21 +53,25 @@ def open_draw_arc_method_modal(n_clicks, draw_arc_mode, is_open):
 @callback(
     Output("draw-arc-method", "data"),
     Output("draw-arc-method-modal", "is_open", allow_duplicate=True),
+    Output("map-image-draw-mode", "figure", allow_duplicate=True),
     Input("manual-draw-arc-button", "n_clicks"),
     Input("coordinate-draw-arc-button", "n_clicks"),
     State("draw-arc-method-modal", "is_open"),
+    State("map-image-draw-mode", "figure"),
     prevent_initial_call=True,
 )
-def set_draw_arc_method(manual_clicks, coordinate_clicks, is_open):
+def set_draw_arc_method(manual_clicks, coordinate_clicks, is_open, figure):
     ctx = callback_context
     if not ctx.triggered:
-        return no_update, no_update
+        return no_update, no_update, no_update
 
     button_id = ctx.triggered[0]['prop_id'].split('.')[0]
     if button_id == "manual-draw-arc-button":
-        return "manual", False
+        figure["layout"]["clickmode"] = "event"
+        return "manual", False, figure
     elif button_id == "coordinate-draw-arc-button":
-        return "coordinate", False
+        figure["layout"]["clickmode"] = "none"
+        return "coordinate", False, figure
     return "", is_open
 
 @callback(
@@ -121,7 +125,7 @@ def draw_arc_coordinate(n_clicks, p1x, p1y, p2x, p2y, p3x, p3y, figure):
         start_angle, end_angle = angle_p1, angle_p3
     arc = draw_arc(center_x, center_y, start_angle, end_angle, radius)
     figure["data"].append(arc)
-    all_arcs.append({
+    all_lines.append({
         "type": "arc",
         "start_x": start_point[0],  
         "start_y": start_point[1],
@@ -137,73 +141,75 @@ def draw_arc_coordinate(n_clicks, p1x, p1y, p2x, p2y, p3x, p3y, figure):
     return figure, False
 
 @callback(
-    Output("arc-coordinates", "data"),
+    Output("arc-coordinates", "data", allow_duplicate=True),
     Input("map-image-draw-mode", "clickData"),
     State("draw-arc-method", "data"),
     State("draw-arc-mode", "data"),
-
+    State("arc-coordinates", "data"),
     prevent_initial_call=True,
 )
-def store_start_point_arc(clickData, draw_arc_method, draw_arc_mode):
-    if draw_arc_method == "manual" and clickData and draw_arc_mode:
-        x = clickData["points"][0]["x"]
-        y = clickData["points"][0]["y"]
-        return {"center_x": x, "center_y": y}
-    return {}
+def store_arc_points(clickData, draw_arc_method, draw_arc_mode, arc_data):
+    if draw_arc_method != "manual" or not draw_arc_mode or not clickData:
+        return arc_data or []
+    x = clickData["points"][0]["x"]
+    y = clickData["points"][0]["y"]
+    if not isinstance(arc_data, list):
+        arc_data = []
+    arc_data.append((x, y))
+    if len(arc_data) >= 3:
+        return arc_data[:3]
+    return arc_data
 
 @callback(
     Output("map-image-draw-mode", "figure", allow_duplicate=True),
-    Input("map-image-draw-mode", "relayoutData"),
-    Input("draw-arc-method", "data"),
-    State("arc-coordinates", "data"),
-    State("map-image-draw-mode", "figure"),
-    State("draw-arc-mode", "data"),
-    prevent_initial_call=True,
-)
-def draw_arc_on_release(relayoutData, draw_arc_method, arc_coordinates, figure, draw_arc_mode):
-    if draw_arc_method == "manual" and relayoutData and arc_coordinates and "center_x" in arc_coordinates and draw_arc_mode:
-        if 'xaxis.range[0]' in relayoutData and 'yaxis.range[0]' in relayoutData and 'xaxis.range[1]' in relayoutData and 'yaxis.range[1]' in relayoutData:
-            center_x = arc_coordinates["center_x"]
-            center_y = arc_coordinates["center_y"]
-            end_x = relayoutData['xaxis.range[1]']
-            end_y = relayoutData['yaxis.range[0]']
-            radius = np.sqrt((end_x - center_x) ** 2 + (end_y - center_y) ** 2)
-            start_angle = 0
-            end_angle = 2 * np.pi
-            arc = draw_arc(center_x, center_y, start_angle, end_angle, radius, color="purple")
-
-            figure["data"].append(arc)
-            all_arcs.append({
-                "type": "arc",
-                "center_x": center_x,
-                "center_y": center_y,
-                "radius": radius,
-                "start_angle": start_angle,
-                "end_angle": end_angle,
-            })
-
-            return figure
-        else:
-            return no_update
-    else:
-        return no_update
-
-@callback(
     Output("arc-coordinates", "data", allow_duplicate=True),
-    Input("map-image-draw-mode", "figure"),
+    Input("arc-coordinates", "data"),
+    State("map-image-draw-mode", "figure"),
     prevent_initial_call=True,
 )
-def clear_start_point_arc(figure):
-    return {}
+def draw_arc_from_clicks(arc_data, figure):
+    from page_home.shared_data import all_arcs, all_lines
+    if not arc_data or len(arc_data) < 3:
+        return no_update, arc_data
+    p1, p2, p3 = arc_data[:3]
+    circle_params = circle_from_3_points(p1, p2, p3)
+    if circle_params is None:
+        return no_update, []
+    center_x, center_y, radius = circle_params
+    angle_p1 = math.atan2(p1[1] - center_y, p1[0] - center_x)
+    angle_p2 = math.atan2(p2[1] - center_y, p2[0] - center_x)
+    angle_p3 = math.atan2(p3[1] - center_y, p3[0] - center_x)
+    start_angle = angle_p1
+    end_angle = angle_p3
+    if (angle_p1 > angle_p3):
+        start_angle, end_angle = angle_p3, angle_p1
+    arc = draw_arc(center_x, center_y, start_angle, end_angle, radius, color="black")
+    figure["data"].append(arc)
+    all_lines.append({
+        "type": "arc",
+        "start_x": p1[0],
+        "start_y": p1[1],
+        "end_x": p3[0],
+        "end_y": p3[1],
+        "center_x": center_x,
+        "center_y": center_y,
+        "radius": radius,
+        "start_angle": start_angle,
+        "end_angle": end_angle,
+    })
+    return figure, []
 
 @callback(
     Output("draw-arc-mode", "data"),
+    Output("map-image-draw-mode", "figure", allow_duplicate=True),
     Input("draw-arc-button", "n_clicks"),
     State("draw-arc-mode", "data"),
+    State("map-image-draw-mode", "figure"),
     prevent_initial_call=True,
 )
-def toggle_draw_arc_mode(n_clicks, current_state):
-    return not current_state
+def toggle_draw_arc_mode(n_clicks, current_state, figure):
+    figure["layout"]["clickmode"] = "none"
+    return not current_state, figure
 
 @callback(
     Output("map-image-draw-mode", "dragmode", allow_duplicate=True),
@@ -256,11 +262,16 @@ def update_button_arc_style(is_active, button_style_store):
     prevent_initial_call=True,
 )
 def save_lines(n_clicks):
-    from page_home.shared_data import all_lines, all_arcs
+    from page_home.shared_data import all_lines, all_arcs, all_spline3, all_spline5, all_lines_drawn
     if n_clicks:
-        all_drawn_objects = all_lines + all_arcs
+        all_drawn_objects = all_lines
         save_lines_to_json(all_drawn_objects)
-        return "Lines and arcs saved successfully!"
+
+        # Tải lại dữ liệu từ JSON sau khi lưu
+        loaded_lines = load_lines_from_json()
+        all_lines.clear()
+        all_lines.extend(loaded_lines)
+        return "Lines and arcs saved and reloaded successfully!"
     return ""
 
 @callback(
@@ -269,10 +280,13 @@ def save_lines(n_clicks):
     prevent_initial_call=True,
 )
 def clear_all_lines(n_clicks):
-    from page_home.shared_data import all_lines, all_arcs
+    from page_home.shared_data import all_lines, all_arcs, all_spline3, all_spline5, all_lines_drawn
     if n_clicks:
         all_lines = []
         all_arcs = []
+        all_spline3 = []
+        all_spline5 = []
+        all_lines_drawn = []
         clear_all_lines = []
         save_lines_to_json(clear_all_lines)
         return "All lines are cleaned"

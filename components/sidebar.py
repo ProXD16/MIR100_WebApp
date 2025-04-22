@@ -6,9 +6,10 @@ class Sidebar:
         return html.Div(
             [
                 dcc.Link(
-                    html.H2("GUI MIR100", className="text-white text-center"),
+                    # html.H2("GUI MiR100", className="text-white text-center"),
+                    html.H2("GUI MiR100", className="text-white text-center", style={"color": "#FFFFFF", "fontWeight": "bold"}),
                     href="/",
-                    style={"text-decoration": "none", "color": "white"},
+                    # style={"text-decoration": "none", "color": "white"},
                 ),
                 html.Hr(className="text-white"),
                 dbc.Nav(
@@ -32,7 +33,7 @@ class Sidebar:
                 ),
             ],
             style={
-                "background-color": "#2C3E50",
+                "background-color": "#77B5FE",
                 "padding": "20px",
                 "width": "250px",
                 "height": "100vh",
