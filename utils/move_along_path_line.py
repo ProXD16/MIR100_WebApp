@@ -1,9 +1,10 @@
 import numpy as np
 import rospy
 import tf
-from geometry_msgs.msg import Twist
+from geometry_msgs.msg import Twist, PoseWithCovarianceStamped
 
 is_moving = True
+current_pose = {"x": 0, "y": 0, "theta": 0}
 
 def send_velocity(linear_speed, angular_speed):
     cmd_vel_publisher = rospy.Publisher('/cmd_vel', Twist, queue_size=10)
@@ -12,18 +13,23 @@ def send_velocity(linear_speed, angular_speed):
     twist.angular.z = angular_speed
     cmd_vel_publisher.publish(twist)
 
+def amcl_callback(msg):
+    position = msg.pose.pose.position
+    orientation = msg.pose.pose.orientation
+    _, _, yaw = tf.transformations.euler_from_quaternion([
+        orientation.x, orientation.y, orientation.z, orientation.w
+    ])
+    current_pose["x"] = position.x
+    current_pose["y"] = position.y
+    current_pose["theta"] = yaw
+
+def init_pose_listener():
+    rospy.Subscriber("/amcl_pose", PoseWithCovarianceStamped, amcl_callback)
+
 def get_robot_position():
-    tf_listener = tf.TransformListener()
-    try:
-        tf_listener.waitForTransform('/map', '/base_link', rospy.Time(0), rospy.Duration(10))
-        (trans, rot) = tf_listener.lookupTransform('/map', '/base_link', rospy.Time(0))
-        robot_x = trans[0]
-        robot_y = trans[1]
-        robot_yaw = tf.transformations.euler_from_quaternion(rot)[2]
-        return robot_x, robot_y, robot_yaw
-    except (tf.LookupException, tf.ConnectivityException, tf.ExtrapolationException):
-        rospy.logerr("TF error when getting robot position. Check if TF is publishing /map to /base_link.")
-        return None, None, None
+    # Trả về vị trí và hướng robot từ topic /amcl_pose (đã lưu từ callback)
+    # An toàn, không gây lag như tf listener liên tục
+    return current_pose["x"], current_pose["y"], current_pose["theta"]
 
 def rotate_to_target(target_x, target_y, angular_speed):
     global is_moving

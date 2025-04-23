@@ -11,7 +11,7 @@ from page_map.map_api import MapAPI
 from page_home.callbacks import *
 
 stop_requested = False 
-ip = '192.168.0.172'
+ip = '192.168.0.173'
 host = 'http://' + ip + '/api/v2.0.0/'
 headers = {
     'Content-Type': 'application/json',
@@ -25,8 +25,12 @@ app = dash.Dash(
         "https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css",
     ],
     suppress_callback_exceptions=True,
-    external_scripts=["assets/script.js"]
+    external_scripts=[
+        "https://cdnjs.cloudflare.com/ajax/libs/nipplejs/0.10.0/nipplejs.min.js",
+        "assets/script.js"
+    ]
 )
+app.title = "MiR100 Smart Equipment and Robot Lab"
 
 if not rospy.core.is_initialized():
     try:
